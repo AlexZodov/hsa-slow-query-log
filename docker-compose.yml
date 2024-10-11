@@ -1,0 +1,64 @@
+version: '3.7'
+
+services:
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: mydb
+      MYSQL_USER: user
+      MYSQL_PASSWORD: userpassword
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./logs:/var/log/mysql  # Mount a local logs directory to the container
+      - ./docker/mysql/my.cnf:/etc/mysql/conf.d/my.cnf
+    ports:
+      - "3306:3306"
+    networks:
+      - elk
+  
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.0.0
+    environment:
+      - ES_JAVA_OPTS=-Xms2g -Xmx2g  # Increase memory allocation
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - ingest.geoip.downloader.enabled=false  # Disable GeoIP auto-download
+    ports:
+      - "9200:9200"
+    networks:
+      - elk
+    volumes:
+      - esdata4:/usr/share/elasticsearch/data
+    
+  logstash:
+    image: docker.elastic.co/logstash/logstash:8.0.0
+    volumes:
+      - ./docker/logstash/logstash.conf:/usr/share/logstash/config/logstash.conf
+      - ./logs/mysql-slow-query.log:/var/log/mysql/mysql-slow-query.log
+    depends_on:
+      - elasticsearch
+    environment:
+      - LOGSTASH_MONITORING_ENABLED=false
+    networks:
+      - elk
+    command: ["logstash", "-f", "/usr/share/logstash/config/logstash.conf"]  # Ensure your config file is loaded
+    
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.0.0
+    ports:
+      - "5601:5601"
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    depends_on:
+      - elasticsearch
+    networks:
+      - elk
+
+volumes:
+  esdata4:
+  mysql_data:
+
+networks:
+  elk:
+    driver: bridge
